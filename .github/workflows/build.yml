@@ -1,0 +1,57 @@
+name: Compilation de Hal
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deballage des zips deposes
+        run: |
+          shopt -s nullglob
+          zips=( *.zip )
+          if [ ${#zips[@]} -gt 0 ]; then
+            for z in "${zips[@]}"; do
+              unzip -o "$z" -d .
+              git rm -q "$z" || rm -f "$z"
+            done
+            git config user.name "github-actions"
+            git config user.email "github-actions@users.noreply.github.com"
+            git add -A
+            git commit -m "Deballage de ${zips[*]}" || true
+            git push
+          fi
+
+      - uses: actions/setup-java@v4
+        if: hashFiles('settings.gradle.kts') != ''
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: hashFiles('settings.gradle.kts') != ''
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Compilation de l'APK
+        if: hashFiles('settings.gradle.kts') != ''
+        run: |
+          gradle assembleRelease --no-daemon --stacktrace
+          cp app/build/outputs/apk/release/app-release.apk Hal.apk
+
+      - name: Publication
+        if: hashFiles('settings.gradle.kts') != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Hal ${{ github.run_number }}
+          files: Hal.apk
+          make_latest: true
